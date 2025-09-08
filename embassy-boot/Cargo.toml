@@ -48,6 +48,7 @@ ed25519-dalek = { version = "2", default-features = false, features = ["std", "r
 ed25519-dalek = ["dep:ed25519-dalek", "_verify"]
 ed25519-salty = ["dep:salty", "_verify"]
 flash-erase-zero = []
+skip-copy-same = []
 
 #Internal features
 _verify = []

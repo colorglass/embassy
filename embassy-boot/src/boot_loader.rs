@@ -319,6 +319,30 @@ impl<ACTIVE: NorFlash, DFU: NorFlash, STATE: NorFlash> BootLoader<ACTIVE, DFU, S
         Ok(())
     }
 
+    #[cfg(feature = "skip-copy-same")]
+    fn page_compare(
+        &mut self,
+        active_offset: u32,
+        dfu_offset: u32,
+        aligned_buf: &mut [u8],
+    ) -> Result<bool, BootError> {
+        let page_size = Self::PAGE_SIZE as u32;
+        let (active_buf, dfu_buf) = aligned_buf.split_at_mut(aligned_buf.len() / 2);
+
+        for offset_in_page in (0..page_size).step_by(active_buf.len()) {
+            let chunk_size = (page_size - offset_in_page).min(active_buf.len() as u32) as usize;
+
+            self.dfu.read(dfu_offset + offset_in_page as u32, &mut dfu_buf[..chunk_size])?;
+            self.active.read(active_offset + offset_in_page as u32, &mut active_buf[..chunk_size])?;
+
+            if active_buf[..chunk_size] != dfu_buf[..chunk_size] {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
+    }
+
     fn copy_page_once_to_active(
         &mut self,
         progress_index: usize,
@@ -328,6 +352,12 @@ impl<ACTIVE: NorFlash, DFU: NorFlash, STATE: NorFlash> BootLoader<ACTIVE, DFU, S
     ) -> Result<(), BootError> {
         if self.current_progress(aligned_buf)? <= progress_index {
             let page_size = Self::PAGE_SIZE as u32;
+
+            #[cfg(feature = "skip-copy-same")]
+            if self.page_compare(to_offset, from_offset, aligned_buf)? {
+                self.update_progress(progress_index, aligned_buf)?;
+                return Ok(());
+            }
 
             self.active.erase(to_offset, to_offset + page_size)?;
 
@@ -350,6 +380,12 @@ impl<ACTIVE: NorFlash, DFU: NorFlash, STATE: NorFlash> BootLoader<ACTIVE, DFU, S
     ) -> Result<(), BootError> {
         if self.current_progress(aligned_buf)? <= progress_index {
             let page_size = Self::PAGE_SIZE as u32;
+
+            #[cfg(feature = "skip-copy-same")]
+            if self.page_compare(from_offset, to_offset, aligned_buf)? {
+                self.update_progress(progress_index, aligned_buf)?;
+                return Ok(());
+            }
 
             self.dfu.erase(to_offset as u32, to_offset + page_size)?;
 
